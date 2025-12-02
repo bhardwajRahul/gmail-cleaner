@@ -34,7 +34,7 @@ GmailCleaner.Delete = {
         const filters = GmailCleaner.Filters.get();
         
         try {
-            await fetch('/api/delete-scan', {
+            const response = await fetch('/api/delete-scan', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -42,6 +42,13 @@ GmailCleaner.Delete = {
                     filters: filters
                 })
             });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const errorMsg = errorData.detail || `Request failed with status ${response.status}`;
+                throw new Error(errorMsg);
+            }
+            
             this.pollProgress();
         } catch (error) {
             alert('Error: ' + error.message);
@@ -166,7 +173,7 @@ GmailCleaner.Delete = {
                 }, 1000);
             } else {
                 btn.textContent = 'Error';
-                alert('Error: ' + result.error);
+                alert('Error: ' + result.message);
                 btn.disabled = false;
                 btn.textContent = `Delete ${r.count}`;
             }
@@ -231,7 +238,7 @@ GmailCleaner.Delete = {
                     document.getElementById('deleteSelectAll').checked = false;
                 }, 800);
             } else {
-                alert('Error: ' + result.error);
+                alert('Error: ' + result.message);
                 checkboxes.forEach(cb => {
                     const index = parseInt(cb.dataset.index);
                     const r = GmailCleaner.deleteResults[index];
@@ -244,6 +251,16 @@ GmailCleaner.Delete = {
             }
         } catch (error) {
             alert('Error: ' + error.message);
+            // Reset buttons after network error
+            document.querySelectorAll('.delete-cb:checked').forEach(cb => {
+                const index = parseInt(cb.dataset.index);
+                const r = GmailCleaner.deleteResults[index];
+                const btn = document.getElementById('delete-' + index);
+                if (btn && r) {
+                    btn.disabled = false;
+                    btn.textContent = `Delete ${r.count}`;
+                }
+            });
         }
     }
 };
