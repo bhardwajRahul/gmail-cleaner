@@ -123,6 +123,8 @@ docker logs $(docker ps -q --filter name=gmail-cleaner)
    - Grant permissions → Click **Continue**
    - Done! You'll see "Authentication flow has completed"
 
+> **🌐 Using a custom domain or remote server?** See [Custom Domain / Reverse Proxy / Remote Server](#custom-domain--reverse-proxy--remote-server) for configuration instructions.
+
 ### Option B: Python (with uv)
 
 ```bash
@@ -200,6 +202,32 @@ If you see `OAuth error: (mismatching_state) CSRF Warning`:
    ```
 
 4. Copy the OAuth URL from logs and paste in browser
+
+### Custom Domain / Reverse Proxy / Remote Server
+
+If you're accessing the app via a **custom domain** (e.g., `gmail.example.com`) or a **server IP** instead of `localhost`, you need to configure the OAuth redirect host:
+
+1. **Set the `OAUTH_HOST` environment variable** to your domain or IP:
+   ```yaml
+   # docker-compose.yml
+   environment:
+     - WEB_AUTH=true
+     - OAUTH_HOST=gmail.example.com  # Your custom domain or server IP
+   ```
+
+2. **Update Google Cloud Console** with the correct redirect URI:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/) → Your Project
+   - Go to **APIs & Services** → **Credentials**
+   - Click on your OAuth 2.0 Client ID
+   - Under **Authorized redirect URIs**, add:
+     ```
+     http://gmail.example.com:8767/
+     ```
+     (Replace with your domain/IP and ensure port 8767 is accessible)
+
+3. **For HTTPS with reverse proxy**, make sure your proxy forwards port 8767 for the OAuth callback, or use the same port as your main app and configure accordingly.
+
+> **Note**: The OAuth callback must be reachable from your browser. If using a reverse proxy, you may need to proxy both port 8766 (app) and port 8767 (OAuth callback).
 
 ### "Google hasn't verified this app" warning
 

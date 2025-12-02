@@ -114,6 +114,7 @@ def get_gmail_service():
                     new_creds = flow.run_local_server(
                         port=settings.oauth_port,
                         bind_addr=bind_address,
+                        host=settings.oauth_host,
                         open_browser=open_browser
                     )
                     

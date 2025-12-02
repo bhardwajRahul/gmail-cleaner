@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     
     # Auth
     web_auth: bool = os.environ.get("WEB_AUTH", "false").lower() == "true"
+    oauth_host: str = os.environ.get("OAUTH_HOST", "localhost")  # Custom host for OAuth redirect (e.g., your domain or IP)
     credentials_file: str = "credentials.json"
     token_file: str = "token.json"
     
