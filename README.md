@@ -105,9 +105,9 @@ cd gmail-cleaner
 
 ### Option A: Docker (Recommended)
 
-1. Start the container:
+1. Pull the latest image and start the container:
 ```bash
-docker compose up -d
+docker compose pull && docker compose up -d
 ```
 
 2. Open the app in your browser:
@@ -206,9 +206,9 @@ If you see `OAuth error: (mismatching_state) CSRF Warning`:
 
 2. **Clear browser cookies** for `accounts.google.com` (or use incognito/private window)
 
-3. **Start fresh:**
+3. **Pull latest image and start fresh:**
    ```bash
-   docker compose up
+   docker compose pull && docker compose up -d
    ```
 
 4. Copy the OAuth URL from logs and paste in browser
