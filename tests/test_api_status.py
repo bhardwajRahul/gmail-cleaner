@@ -4,9 +4,6 @@ Tests for Status API Endpoints
 Tests for GET status endpoints.
 """
 
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import patch
 
 # client fixture is provided by conftest.py
 

@@ -11,7 +11,7 @@ reviews:
   high_level_summary: true     # Creates the "Summary" section at the top of the PR
   # This customizes the summary and removes the default "Tip" footer
   high_level_summary_instructions: >
-    Provide a concise summary of the changes in bullet points. 
+    Provide a concise summary of the changes in bullet points.
     Do not include any 'Tips', footers, or instructions on how to customize settings.
   poem: true                   # Fun little poem at the end (set to false if you hate fun)
   review_status: true          # Updates the PR status check
@@ -21,7 +21,7 @@ reviews:
   auto_review:
     enabled: true
     drafts: false              # Won't review Draft PRs (saves noise)
-    base_branches: ["main", "master", "develop"] # Only reviews PRs merging into these branches
+    base_branches: ["main"] # Only reviews PRs merging into these branches
 
   # Path filters to exclude files from review
   path_filters:
