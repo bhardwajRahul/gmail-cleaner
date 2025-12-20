@@ -32,7 +32,7 @@ repos:
 
   # Python security checks
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.6
+    rev: 1.9.2
     hooks:
       - id: bandit
         args: [ -i]
@@ -41,7 +41,7 @@ repos:
 
   # Ensure requirements files are valid
   - repo: https://github.com/jazzband/pip-tools
-    rev: 7.4.1
+    rev: v7.5.2
     hooks:
       - id: pip-compile
         name: Check requirements files are up to date
