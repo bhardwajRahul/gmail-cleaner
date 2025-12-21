@@ -193,11 +193,23 @@ class TestOAuthFlowErrors:
 
     @patch("app.services.auth.settings")
     @patch("os.path.exists")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"type": "installed", "client_id": "test"}',
+    )
+    @patch("app.services.auth._is_file_empty", return_value=False)
     @patch("app.services.auth.InstalledAppFlow")
     @patch("app.services.auth._auth_in_progress", {"active": False})
     @patch("app.services.auth.is_web_auth_mode", return_value=False)
     def test_oauth_invalid_authorization_code(
-        self, mock_web_auth, mock_flow, mock_exists, mock_settings
+        self,
+        mock_web_auth,
+        mock_flow,
+        mock_is_file_empty,
+        mock_file,
+        mock_exists,
+        mock_settings,
     ):
         """OAuth flow should handle invalid authorization code."""
         mock_settings.credentials_file = "credentials.json"
@@ -230,11 +242,23 @@ class TestOAuthFlowErrors:
 
     @patch("app.services.auth.settings")
     @patch("os.path.exists")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"type": "installed", "client_id": "test"}',
+    )
+    @patch("app.services.auth._is_file_empty", return_value=False)
     @patch("app.services.auth.InstalledAppFlow")
     @patch("app.services.auth._auth_in_progress", {"active": False})
     @patch("app.services.auth.is_web_auth_mode", return_value=False)
     def test_oauth_timeout_handling(
-        self, mock_web_auth, mock_flow, mock_exists, mock_settings
+        self,
+        mock_web_auth,
+        mock_flow,
+        mock_is_file_empty,
+        mock_file,
+        mock_exists,
+        mock_settings,
     ):
         """OAuth flow should handle timeout gracefully."""
         mock_settings.credentials_file = "credentials.json"
@@ -265,11 +289,23 @@ class TestOAuthFlowErrors:
 
     @patch("app.services.auth.settings")
     @patch("os.path.exists")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"type": "installed", "client_id": "test"}',
+    )
+    @patch("app.services.auth._is_file_empty", return_value=False)
     @patch("app.services.auth.InstalledAppFlow")
     @patch("app.services.auth._auth_in_progress", {"active": False})
     @patch("app.services.auth.is_web_auth_mode", return_value=False)
     def test_oauth_resets_auth_in_progress_on_error(
-        self, mock_web_auth, mock_flow, mock_exists, mock_settings
+        self,
+        mock_web_auth,
+        mock_flow,
+        mock_is_file_empty,
+        mock_file,
+        mock_exists,
+        mock_settings,
     ):
         """OAuth flow should reset _auth_in_progress flag on error."""
         mock_settings.credentials_file = "credentials.json"
