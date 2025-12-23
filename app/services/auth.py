@@ -10,6 +10,8 @@ import os
 import platform
 import shutil
 import threading
+import time
+from http.server import HTTPServer
 
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -18,6 +20,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 from app.core import settings, state
+from app.services.auth_handlers import OAuthCallbackHandler
 
 logger = logging.getLogger(__name__)
 
@@ -291,18 +294,24 @@ def get_gmail_service():
                     # The server listens on the internal port, but the redirect URI uses the external port
                     redirect_port = (
                         settings.oauth_external_port
-                        if settings.oauth_external_port is not None
+                        if isinstance(settings.oauth_external_port, int)
                         else settings.oauth_port
                     )
 
-                    # If external port is different, set custom redirect URI
-                    if redirect_port != settings.oauth_port:
-                        # Construct redirect URI using external port
-                        redirect_uri = f"http://{settings.oauth_host}:{redirect_port}/"
-                        flow.redirect_uri = redirect_uri
-                        logger.info(
-                            f"Using custom redirect URI {redirect_uri} "
-                            f"(internal port: {settings.oauth_port}, external port: {redirect_port})"
+                    # Validate port ranges (1-65535)
+                    if not isinstance(settings.oauth_port, int) or not (
+                        1 <= settings.oauth_port <= 65535
+                    ):
+                        raise ValueError(
+                            f"Invalid oauth_port: {settings.oauth_port}. "
+                            "Port must be between 1 and 65535."
+                        )
+                    if not isinstance(redirect_port, int) or not (
+                        1 <= redirect_port <= 65535
+                    ):
+                        raise ValueError(
+                            f"Invalid redirect port: {redirect_port}. "
+                            "Port must be between 1 and 65535."
                         )
 
                     # Check if we should auto-open browser
@@ -319,13 +328,191 @@ def get_gmail_service():
                             shutil.which("xdg-open") or os.environ.get("DISPLAY")
                         )
 
-                    new_creds = flow.run_local_server(
-                        port=settings.oauth_port,  # Server listens on internal port
-                        bind_addr=bind_address,
-                        host=settings.oauth_host,
-                        open_browser=open_browser,
-                        prompt="consent",
-                    )
+                    # If external port is different, manually handle OAuth flow
+                    # because run_local_server() constructs redirect URI from port parameter
+                    if redirect_port != settings.oauth_port:
+                        # Validate oauth_host is not empty
+                        if not settings.oauth_host or not settings.oauth_host.strip():
+                            raise ValueError(
+                                "oauth_host cannot be empty when using custom external port. "
+                                "Please set OAUTH_HOST environment variable."
+                            )
+
+                        # Construct redirect URI using external port
+                        redirect_uri = f"http://{settings.oauth_host}:{redirect_port}/"
+                        flow.redirect_uri = redirect_uri
+                        logger.info(
+                            f"Using custom redirect URI {redirect_uri} "
+                            f"(internal port: {settings.oauth_port}, external port: {redirect_port})"
+                        )
+
+                        # Manually handle OAuth flow with custom redirect URI
+                        authorization_url, oauth_state = flow.authorization_url(
+                            access_type="offline", prompt="consent"
+                        )
+
+                        # Validate authorization URL was generated
+                        if not authorization_url or not isinstance(
+                            authorization_url, str
+                        ):
+                            raise ValueError(
+                                "Failed to generate OAuth authorization URL. "
+                                "Please check your credentials.json configuration."
+                            )
+
+                        # Store OAuth state for CSRF protection
+                        with state.oauth_state_lock:
+                            state.oauth_state["state"] = oauth_state
+                        logger.debug(
+                            f"Stored OAuth state for CSRF protection: {oauth_state[:20]}..."
+                            if oauth_state and len(oauth_state) > 20
+                            else f"Stored OAuth state: {oauth_state}"
+                        )
+
+                        # Set pending auth URL for web auth mode
+                        if is_web_auth_mode():
+                            state.pending_auth_url["url"] = authorization_url
+
+                        # Create a simple HTTP server to handle the callback
+                        callback_event = threading.Event()
+                        callback_lock = threading.Lock()
+                        callback_data: dict = {"code": None, "error": None}
+                        auth_code = None
+                        error_message = None
+
+                        # Create handler factory with thread-safe primitives
+                        def handler_factory(*args, **kwargs):
+                            return OAuthCallbackHandler(
+                                callback_event,
+                                callback_lock,
+                                callback_data,
+                                *args,
+                                **kwargs,
+                            )
+
+                        # Start the callback server with error handling
+                        server = None
+                        try:
+                            try:
+                                server = HTTPServer(
+                                    (bind_address, settings.oauth_port),
+                                    handler_factory,
+                                )
+                            except OSError as e:
+                                # Check for port already in use error (platform-independent)
+                                error_str = str(e).lower()
+                                if (
+                                    "address already in use" in error_str
+                                    or (
+                                        hasattr(e, "errno") and e.errno in (98, 10048)
+                                    )  # Linux: 98, Windows: 10048
+                                ):
+                                    raise OSError(
+                                        f"Port {settings.oauth_port} is already in use. "
+                                        "Please stop any other service using this port or change the port configuration."
+                                    ) from e
+                                raise
+
+                            # Print authorization URL
+                            print(
+                                f"Please visit this URL to authorize the application: {authorization_url}"
+                            )
+                            logger.info(f"OAuth authorization URL: {authorization_url}")
+
+                            if open_browser:
+                                try:
+                                    import webbrowser
+
+                                    webbrowser.open(authorization_url)
+                                except Exception as e:
+                                    logger.warning(f"Failed to open browser: {e}")
+
+                            # Wait for the callback (with timeout)
+                            timeout = 300  # 5 minutes
+                            start_time = time.time()
+
+                            # Set socket timeout to allow periodic timeout checks
+                            server.timeout = 1.0  # 1 second timeout for handle_request
+
+                            while not callback_event.is_set():
+                                elapsed = time.time() - start_time
+                                if elapsed > timeout:
+                                    raise TimeoutError(
+                                        f"OAuth authorization timed out after {timeout} seconds. "
+                                        "Please try signing in again."
+                                    )
+
+                                try:
+                                    server.handle_request()
+                                except Exception as e:
+                                    logger.error(
+                                        f"Error handling OAuth callback request: {e}",
+                                        exc_info=True,
+                                    )
+                                    # Continue waiting unless it's a critical error
+                                    error_str = str(e).lower()
+                                    if "address already in use" in error_str or (
+                                        isinstance(e, OSError)
+                                        and hasattr(e, "errno")
+                                        and e.errno in (98, 10048)
+                                    ):
+                                        raise
+
+                                # Wait for callback event with short timeout to allow periodic checks
+                                if not callback_event.wait(timeout=0.1):
+                                    # Timeout - continue loop to check elapsed time
+                                    continue
+
+                            # Read callback data under lock
+                            with callback_lock:
+                                auth_code = callback_data["code"]
+                                error_message = callback_data["error"]
+
+                            if error_message:
+                                raise ValueError(f"OAuth error: {error_message}")
+
+                            if not auth_code:
+                                raise ValueError("No authorization code received")
+
+                            # Exchange authorization code for credentials
+                            try:
+                                flow.fetch_token(code=auth_code)
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to exchange authorization code for token: {e}",
+                                    exc_info=True,
+                                )
+                                raise ValueError(
+                                    f"Failed to exchange authorization code: {str(e)}. "
+                                    "Please try signing in again."
+                                ) from e
+
+                            new_creds = flow.credentials
+
+                        finally:
+                            # Always close the server, even if an exception occurred
+                            if server is not None:
+                                try:
+                                    server.server_close()
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Error closing OAuth callback server: {e}"
+                                    )
+                    else:
+                        # Use standard run_local_server when ports match
+                        new_creds = flow.run_local_server(
+                            port=settings.oauth_port,
+                            bind_addr=bind_address,
+                            host=settings.oauth_host,
+                            open_browser=open_browser,
+                            prompt="consent",
+                        )
+
+                    # Validate credentials were obtained
+                    if new_creds is None:
+                        raise ValueError(
+                            "OAuth flow completed but no credentials were obtained"
+                        )
 
                     # Save token with error handling
                     try:
@@ -355,6 +542,24 @@ def get_gmail_service():
                         "OAuth error: Token exchange failed. Please try again. "
                         "If this persists, check your credentials.json configuration."
                     )
+                except TimeoutError as e:
+                    # Timeout errors
+                    logger.error(f"OAuth timeout: {e}", exc_info=True)
+                    print(f"OAuth error: {e}")
+                except OSError as e:
+                    # Port binding and other OS errors
+                    logger.error(f"OAuth system error: {e}", exc_info=True)
+                    error_str = str(e)
+                    if (
+                        "Address already in use" in error_str
+                        or "port" in error_str.lower()
+                    ):
+                        print(
+                            f"OAuth error: Port conflict - {e}. "
+                            "Please check if another service is using the OAuth port or change the port configuration."
+                        )
+                    else:
+                        print(f"OAuth error: System error - {e}")
                 except Exception as e:
                     # Other OAuth errors
                     logger.error(f"OAuth error: {e}", exc_info=True)
@@ -368,11 +573,19 @@ def get_gmail_service():
                         print(
                             "OAuth error: Access denied. Please grant the requested permissions."
                         )
+                    elif "invalid_grant" in error_str.lower():
+                        print(
+                            "OAuth error: Invalid authorization code. "
+                            "The authorization may have expired. Please try signing in again."
+                        )
                     else:
                         print(f"OAuth error: {e}")
                 finally:
+                    # Always reset auth state, even on error
                     _auth_in_progress["active"] = False
                     state.pending_auth_url["url"] = None
+                    with state.oauth_state_lock:
+                        state.oauth_state["state"] = None
 
             oauth_thread = threading.Thread(target=run_oauth, daemon=True)
             oauth_thread.start()

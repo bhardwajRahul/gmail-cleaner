@@ -217,6 +217,17 @@ The app opens at http://localhost:8766
 **Q: Emails went to Trash, can I recover them?**  
 > Yes! The delete feature moves emails to Trash. Go to Gmail → Trash to recover within 30 days.
 
+**Q: Can't delete or modify files in the `./data` directory?**  
+> Docker containers run as root by default, so files created in `./data` (like `token.json`) are owned by root. To fix permissions:
+> ```bash
+> sudo chown -R $USER:$USER ./data/
+> ```
+> Or to delete a specific file:
+> ```bash
+> sudo rm ./data/token.json
+> ```
+> This is a common Docker behavior - the files are safe, just owned by root for security reasons.
+
 **Q: Having OAuth authentication issues?**  
 > Check the [Troubleshooting](#troubleshooting) section for common solutions.
 
@@ -333,7 +344,7 @@ If you see `OAuth error: (mismatching_state) CSRF Warning`:
 1. **Stop and clean up:**
    ```bash
    docker compose down
-   rm -f token.json
+   rm -f ./data/token.json
    ```
 
 2. **Clear browser cookies** for `accounts.google.com` (or use incognito/private window)
